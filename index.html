@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="fi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Juhannusvisa</title>
+    <link rel="stylesheet" href="style.css">
+    <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+    <script defer src="script.js"></script>
+  </head>
+  <body>
+    <main class="app" aria-live="polite">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">Keskikesän tietokoe</p>
+          <h1>Juhannusvisa</h1>
+        </div>
+        <div class="sun" aria-hidden="true">☀️</div>
+      </section>
+
+      <section id="start-view" class="view view-active">
+        <div class="intro">
+          <p>
+            Faktaa, perinteitä ja sopivasti mökkitodellisuutta. Valitse nimi ja
+            avatar, sitten joko yksinpeli tai yhteinen huone.
+          </p>
+        </div>
+
+        <form id="join-form" class="join-form">
+          <label for="player-name">Nimi</label>
+          <input
+            id="player-name"
+            name="player-name"
+            type="text"
+            autocomplete="name"
+            maxlength="24"
+            placeholder="Esim. Mökki-Maija"
+            required
+          >
+
+          <fieldset>
+            <legend>Valitse avatar</legend>
+            <div id="avatar-options" class="avatar-grid"></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Pelitapa</legend>
+            <div class="mode-grid" role="group" aria-label="Pelitapa">
+              <button class="mode-button" type="button" data-mode="solo">Yksinpeli</button>
+              <button class="mode-button" type="button" data-mode="host">Luo huone</button>
+              <button class="mode-button" type="button" data-mode="join">Liity huoneeseen</button>
+            </div>
+          </fieldset>
+
+          <div id="room-code-group" class="room-code-group" hidden>
+            <label for="room-code-input">Huonekoodi tai kutsulinkki</label>
+            <input
+              id="room-code-input"
+              name="room-code"
+              type="text"
+              autocomplete="off"
+              maxlength="80"
+              placeholder="Esim. JUHA-1234"
+            >
+          </div>
+
+          <p id="start-status" class="status-message" hidden></p>
+          <button id="join-submit-button" class="primary-action" type="submit">
+            Aloita yksinpeli
+          </button>
+        </form>
+      </section>
+
+      <section id="lobby-view" class="view" hidden>
+        <div class="room-summary">
+          <p class="eyebrow">Huone</p>
+          <h2 id="room-code-label">...</h2>
+          <p id="room-status" class="status-message">Avataan huonetta...</p>
+        </div>
+
+        <div class="copy-grid">
+          <label for="room-link-input">Kutsulinkki</label>
+          <input id="room-link-input" type="text" readonly>
+          <button id="copy-link-button" class="secondary-action" type="button">
+            Kopioi linkki
+          </button>
+        </div>
+
+        <section class="lobby-list">
+          <div class="section-heading">
+            <h3>Pelaajat</h3>
+            <span id="player-count-label"></span>
+          </div>
+          <ul id="player-list" class="player-list"></ul>
+        </section>
+
+        <div class="room-actions">
+          <button id="start-room-button" class="primary-action" type="button">
+            Aloita kisa
+          </button>
+          <button id="leave-room-button" class="secondary-action" type="button">
+            Takaisin alkuun
+          </button>
+        </div>
+      </section>
+
+      <section id="quiz-view" class="view" hidden>
+        <header class="player-strip">
+          <div class="player-badge">
+            <span id="player-avatar" class="player-avatar" aria-hidden="true"></span>
+            <span id="player-name-label"></span>
+          </div>
+          <div class="score-pill">
+            <span id="progress-label"></span>
+            <strong id="score-label"></strong>
+          </div>
+        </header>
+
+        <div class="question-area">
+          <p id="question-counter" class="question-counter"></p>
+          <span id="question-tag" class="question-tag"></span>
+          <h2 id="question-text"></h2>
+          <div id="answer-options" class="answer-grid"></div>
+        </div>
+
+        <section id="feedback-panel" class="feedback-panel" hidden>
+          <p id="feedback-title" class="feedback-title"></p>
+          <p id="feedback-explanation"></p>
+        </section>
+
+        <button id="next-button" class="primary-action" type="button" hidden>
+          Seuraava kysymys
+        </button>
+
+        <section id="leaderboard-panel" class="leaderboard-panel" hidden>
+          <div class="section-heading">
+            <h3>Tulostaulu</h3>
+            <span id="leaderboard-room-label"></span>
+          </div>
+          <ol id="leaderboard-list" class="leaderboard-list"></ol>
+        </section>
+      </section>
+
+      <section id="result-view" class="view" hidden>
+        <div class="result-hero">
+          <p class="eyebrow">Lopputulos</p>
+          <div id="result-avatar" class="result-avatar" aria-hidden="true"></div>
+          <h2 id="result-score"></h2>
+          <p id="result-feedback"></p>
+        </div>
+
+        <section id="result-leaderboard-panel" class="leaderboard-panel" hidden>
+          <div class="section-heading">
+            <h3>Lopullinen tulostaulu</h3>
+            <span id="result-room-label"></span>
+          </div>
+          <ol id="result-leaderboard-list" class="leaderboard-list"></ol>
+        </section>
+
+        <div class="result-actions">
+          <button id="restart-button" class="primary-action" type="button">
+            Aloita alusta
+          </button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
