@@ -1,4 +1,7 @@
 const avatars = ["🌿", "🔥", "🛶", "🌻", "🦟", "🎣", "🥔", "🍓"];
+const QUESTION_SECONDS = 10;
+const FEEDBACK_DELAY_SECONDS = 5;
+const TIMER_UPDATE_MS = 250;
 
 // Kysymykset ovat yhdessä paikassa, jotta visaa on helppo muokata tai laajentaa.
 // tag kertoo käyttöliittymälle, onko kysymys faktaa, perinnettä vai kevyempi kompa.
@@ -241,6 +244,11 @@ const state = {
   answeredCount: 0,
   hasAnswered: false,
   isDone: false,
+  questionTimerId: null,
+  timerIntervalId: null,
+  advanceTimerId: null,
+  questionEndsAt: 0,
+  advanceEndsAt: 0,
 };
 
 const network = {
@@ -275,13 +283,17 @@ const playerNameLabel = document.querySelector("#player-name-label");
 const progressLabel = document.querySelector("#progress-label");
 const scoreLabel = document.querySelector("#score-label");
 const questionCounter = document.querySelector("#question-counter");
+const timerPanel = document.querySelector(".timer-panel");
+const timerLabel = document.querySelector("#timer-label");
+const timerValue = document.querySelector("#timer-value");
+const timerBar = document.querySelector("#timer-bar");
 const questionTag = document.querySelector("#question-tag");
 const questionText = document.querySelector("#question-text");
 const answerOptions = document.querySelector("#answer-options");
 const feedbackPanel = document.querySelector("#feedback-panel");
 const feedbackTitle = document.querySelector("#feedback-title");
 const feedbackExplanation = document.querySelector("#feedback-explanation");
-const nextButton = document.querySelector("#next-button");
+const autoAdvanceStatus = document.querySelector("#auto-advance-status");
 const leaderboardPanel = document.querySelector("#leaderboard-panel");
 const leaderboardRoomLabel = document.querySelector("#leaderboard-room-label");
 const leaderboardList = document.querySelector("#leaderboard-list");
@@ -378,6 +390,7 @@ function preparePlayerFromForm() {
 }
 
 function resetQuizProgress() {
+  clearQuizTimers();
   state.currentQuestionIndex = 0;
   state.score = 0;
   state.answeredCount = 0;
@@ -864,6 +877,7 @@ async function copyRoomLink() {
 }
 
 function renderQuestion() {
+  clearQuizTimers();
   const question = questions[state.currentQuestionIndex];
   state.hasAnswered = false;
 
@@ -872,12 +886,15 @@ function renderQuestion() {
   progressLabel.textContent = `${state.currentQuestionIndex + 1}/${questions.length}`;
   scoreLabel.textContent = `${state.score} pistettä`;
   questionCounter.textContent = `Kysymys ${state.currentQuestionIndex + 1}`;
+  timerLabel.textContent = "Aikaa vastata";
+  updateTimerDisplay(QUESTION_SECONDS, QUESTION_SECONDS);
   questionTag.textContent = question.tag;
   questionText.textContent = question.text;
   answerOptions.innerHTML = "";
   feedbackPanel.hidden = true;
   feedbackPanel.className = "feedback-panel";
-  nextButton.hidden = true;
+  autoAdvanceStatus.hidden = true;
+  autoAdvanceStatus.textContent = "";
   leaderboardPanel.hidden = state.role === "solo";
 
   question.answers.forEach((answer, index) => {
@@ -885,20 +902,74 @@ function renderQuestion() {
     button.type = "button";
     button.className = "answer-button";
     button.textContent = answer;
-    button.addEventListener("click", () => handleAnswer(index));
+    button.addEventListener("click", () => resolveQuestion(index, false));
     answerOptions.append(button);
   });
 
+  startQuestionTimer();
   renderLeaderboards();
 }
 
-function handleAnswer(selectedIndex) {
+function startQuestionTimer() {
+  state.questionEndsAt = Date.now() + QUESTION_SECONDS * 1000;
+  state.timerIntervalId = window.setInterval(updateQuestionTimer, TIMER_UPDATE_MS);
+  state.questionTimerId = window.setTimeout(() => resolveQuestion(null, true), QUESTION_SECONDS * 1000);
+  updateQuestionTimer();
+}
+
+function updateQuestionTimer() {
+  const remainingMs = Math.max(0, state.questionEndsAt - Date.now());
+  const remainingSeconds = Math.ceil(remainingMs / 1000);
+  updateTimerDisplay(remainingSeconds, QUESTION_SECONDS);
+}
+
+function updateTimerDisplay(remainingSeconds, totalSeconds) {
+  const safeRemaining = Math.max(0, Math.min(totalSeconds, remainingSeconds));
+  const ratio = totalSeconds > 0 ? safeRemaining / totalSeconds : 0;
+
+  timerValue.textContent = safeRemaining;
+  timerBar.style.transform = `scaleX(${ratio})`;
+  timerPanel.classList.toggle("timer-low", safeRemaining <= 3);
+}
+
+function clearQuizTimers() {
+  if (state.questionTimerId) {
+    window.clearTimeout(state.questionTimerId);
+  }
+
+  if (state.timerIntervalId) {
+    window.clearInterval(state.timerIntervalId);
+  }
+
+  if (state.advanceTimerId) {
+    window.clearTimeout(state.advanceTimerId);
+  }
+
+  state.questionTimerId = null;
+  state.timerIntervalId = null;
+  state.advanceTimerId = null;
+  state.questionEndsAt = 0;
+  state.advanceEndsAt = 0;
+}
+
+function resolveQuestion(selectedIndex, timedOut) {
   if (state.hasAnswered) {
     return;
   }
 
+  if (state.questionTimerId) {
+    window.clearTimeout(state.questionTimerId);
+  }
+
+  if (state.timerIntervalId) {
+    window.clearInterval(state.timerIntervalId);
+  }
+
+  state.questionTimerId = null;
+  state.timerIntervalId = null;
+
   const question = questions[state.currentQuestionIndex];
-  const isCorrect = selectedIndex === question.correctIndex;
+  const isCorrect = !timedOut && selectedIndex === question.correctIndex;
   state.hasAnswered = true;
   state.answeredCount = Math.max(state.answeredCount, state.currentQuestionIndex + 1);
 
@@ -906,12 +977,14 @@ function handleAnswer(selectedIndex) {
     state.score += 1;
   }
 
+  updateTimerDisplay(timedOut ? 0 : Math.max(0, Math.ceil((state.questionEndsAt - Date.now()) / 1000)), QUESTION_SECONDS);
+
   [...answerOptions.children].forEach((button, index) => {
     button.disabled = true;
 
     if (index === question.correctIndex) {
       button.classList.add("correct");
-    } else if (index === selectedIndex) {
+    } else if (!timedOut && index === selectedIndex) {
       button.classList.add("incorrect");
     }
   });
@@ -919,16 +992,53 @@ function handleAnswer(selectedIndex) {
   scoreLabel.textContent = `${state.score} pistettä`;
   feedbackPanel.hidden = false;
   feedbackPanel.classList.add(isCorrect ? "right" : "wrong");
-  feedbackTitle.textContent = isCorrect ? "Oikein meni!" : "Ei aivan, mutta juhannushenki säilyy.";
+  feedbackTitle.textContent = getFeedbackTitle(isCorrect, timedOut);
   feedbackExplanation.textContent = question.explanation;
-  nextButton.hidden = false;
-  nextButton.textContent =
-    state.currentQuestionIndex === questions.length - 1 ? "Näytä tulos" : "Seuraava kysymys";
+  scheduleAutoAdvance();
 
   syncAndShareScore(false);
 }
 
-function showNextStep() {
+function getFeedbackTitle(isCorrect, timedOut) {
+  if (timedOut) {
+    return "Aika loppui! Oikea vastaus näkyy vihreällä.";
+  }
+
+  return isCorrect ? "Oikein meni!" : "Ei aivan, mutta juhannushenki säilyy.";
+}
+
+function scheduleAutoAdvance() {
+  state.advanceEndsAt = Date.now() + FEEDBACK_DELAY_SECONDS * 1000;
+  autoAdvanceStatus.hidden = false;
+  state.timerIntervalId = window.setInterval(updateAutoAdvanceStatus, TIMER_UPDATE_MS);
+  state.advanceTimerId = window.setTimeout(advanceQuiz, FEEDBACK_DELAY_SECONDS * 1000);
+  updateAutoAdvanceStatus();
+}
+
+function updateAutoAdvanceStatus() {
+  const remainingMs = Math.max(0, state.advanceEndsAt - Date.now());
+  const remainingSeconds = Math.ceil(remainingMs / 1000);
+  const label =
+    state.currentQuestionIndex === questions.length - 1
+      ? "Tulokset näytetään"
+      : "Seuraava kysymys alkaa";
+
+  timerLabel.textContent = "Vastaus lukittu";
+  autoAdvanceStatus.textContent = `${label} ${remainingSeconds} sekunnin kuluttua.`;
+}
+
+function advanceQuiz() {
+  if (state.timerIntervalId) {
+    window.clearInterval(state.timerIntervalId);
+  }
+
+  if (state.advanceTimerId) {
+    window.clearTimeout(state.advanceTimerId);
+  }
+
+  state.timerIntervalId = null;
+  state.advanceTimerId = null;
+
   if (state.currentQuestionIndex < questions.length - 1) {
     state.currentQuestionIndex += 1;
     renderQuestion();
@@ -1063,6 +1173,8 @@ function leaveRoom() {
 }
 
 function destroyNetwork() {
+  clearQuizTimers();
+
   network.connectionsByPlayerId.forEach((connection) => {
     if (connection.close) {
       connection.close();
@@ -1131,7 +1243,6 @@ modeButtons.forEach((button) => {
 copyLinkButton.addEventListener("click", copyRoomLink);
 startRoomButton.addEventListener("click", startRoomQuiz);
 leaveRoomButton.addEventListener("click", leaveRoom);
-nextButton.addEventListener("click", showNextStep);
 restartButton.addEventListener("click", restartQuiz);
 window.addEventListener("beforeunload", destroyNetwork);
 

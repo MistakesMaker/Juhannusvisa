@@ -118,6 +118,15 @@
 
         <div class="question-area">
           <p id="question-counter" class="question-counter"></p>
+          <div class="timer-panel" aria-live="off">
+            <div class="timer-copy">
+              <span id="timer-label">Aikaa 10 s</span>
+              <strong id="timer-value">10</strong>
+            </div>
+            <div class="timer-track" aria-hidden="true">
+              <div id="timer-bar" class="timer-bar"></div>
+            </div>
+          </div>
           <span id="question-tag" class="question-tag"></span>
           <h2 id="question-text"></h2>
           <div id="answer-options" class="answer-grid"></div>
@@ -128,9 +137,7 @@
           <p id="feedback-explanation"></p>
         </section>
 
-        <button id="next-button" class="primary-action" type="button" hidden>
-          Seuraava kysymys
-        </button>
+        <p id="auto-advance-status" class="auto-advance-status" hidden></p>
 
         <section id="leaderboard-panel" class="leaderboard-panel" hidden>
           <div class="section-heading">

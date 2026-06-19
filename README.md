@@ -9,6 +9,8 @@ Juhannusvisa on suomenkielinen selainvisa juhannuksesta. Se toimii staattisena G
 - Moninpelissä yksi pelaaja luo huoneen ja muut liittyvät huonekoodilla tai kutsulinkillä.
 - Huoneen luoja eli host näkee pelaajalistan ja käynnistää kisan painamalla **Aloita kisa**.
 - Pelaajat vastaavat omilla puhelimillaan, ja tulostaulu päivittyy huoneessa.
+- Jokaisessa kysymyksessä on 10 sekunnin vastausaika. Jos aika loppuu, oikea vastaus näytetään ilman pistettä.
+- Palautetta näytetään 5 sekuntia, minkä jälkeen visa siirtyy automaattisesti eteenpäin.
 - Kysymykset ovat pääosin faktapohjaisia, mutta mukana on muutama kevyt juhannuskompa.
 
 ## Tiedostot
