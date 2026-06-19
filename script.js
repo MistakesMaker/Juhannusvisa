@@ -665,10 +665,23 @@ function handleGuestMessage(message) {
   }
 
   if (message.type === "room-state") {
+    if (isPlayableRoomSnapshot(message.room)) {
+      handleQuestionSync({
+        type: "question-sync",
+        room: message.room,
+        questionIndex: message.room.currentQuestionIndex,
+        questionEndsAt: message.room.questionEndsAt,
+        advanceEndsAt: message.room.advanceEndsAt,
+        hostNow: message.room.hostNow,
+      });
+      return;
+    }
+
     hydrateRoom(message.room);
     if (!lobbyView.hidden || state.phase === "lobby") {
       renderLobby();
     }
+
     renderLeaderboards();
   }
 
@@ -813,6 +826,9 @@ function serializeRoom() {
     players: Object.values(state.players),
     questionCount: questions.length,
     currentQuestionIndex: state.currentQuestionIndex,
+    questionEndsAt: state.questionEndsAt,
+    advanceEndsAt: state.advanceEndsAt,
+    hostNow: Date.now(),
   };
 }
 
@@ -849,6 +865,7 @@ function handleQuestionSync(message) {
   };
 
   if (!quizView.hidden && state.currentQuestionIndex === questionIndex) {
+    renderLeaderboards();
     return;
   }
 
@@ -857,6 +874,17 @@ function handleQuestionSync(message) {
   showView(quizView);
   renderQuestion(timing);
   renderLeaderboards();
+}
+
+function isPlayableRoomSnapshot(room) {
+  return (
+    room &&
+    room.phase === "quiz" &&
+    Number.isFinite(Number(room.currentQuestionIndex)) &&
+    Number.isFinite(Number(room.questionEndsAt)) &&
+    Number.isFinite(Number(room.advanceEndsAt)) &&
+    Number.isFinite(Number(room.hostNow))
+  );
 }
 
 function normalizePlayer(player) {
