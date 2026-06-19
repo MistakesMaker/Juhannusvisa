@@ -11,6 +11,7 @@ Juhannusvisa on suomenkielinen selainvisa juhannuksesta. Se toimii staattisena G
 - Pelaajat vastaavat omilla puhelimillaan, ja tulostaulu päivittyy huoneessa.
 - Jokaisessa kysymyksessä on 10 sekunnin vastausaika. Jos aika loppuu, oikea vastaus näytetään ilman pistettä.
 - Palautetta näytetään 5 sekuntia, minkä jälkeen visa siirtyy automaattisesti eteenpäin.
+- Huonepelissä host synkronoi kysymysten aikarajat, jotta 10 sekunnin kierros alkaa kaikilla samaan aikaan.
 - Kysymykset ovat pääosin faktapohjaisia, mutta mukana on muutama kevyt juhannuskompa.
 
 ## Tiedostot

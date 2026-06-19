@@ -173,16 +173,31 @@ fieldset {
 
 .avatar-option {
   display: grid;
+  gap: 0.2rem;
   min-height: 3.9rem;
   place-items: center;
   border: 2px solid var(--border);
   border-radius: 0.5rem;
   background: var(--panel);
-  font-size: 1.85rem;
   transition:
     transform 160ms ease,
     border-color 160ms ease,
     background 160ms ease;
+}
+
+.avatar-icon {
+  font-size: 1.85rem;
+  line-height: 1;
+}
+
+.avatar-label {
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .avatar-option[aria-pressed="true"] {

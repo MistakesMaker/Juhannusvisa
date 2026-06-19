@@ -1,4 +1,14 @@
-const avatars = ["🌿", "🔥", "🛶", "🌻", "🦟", "🎣", "🥔", "🍓"];
+const avatarChoices = [
+  { icon: "🌿", label: "Koivu" },
+  { icon: "🔥", label: "Kokko" },
+  { icon: "🛶", label: "Vene" },
+  { icon: "🌻", label: "Kukka" },
+  { icon: "🦟", label: "Hyttynen" },
+  { icon: "🎣", label: "Kala" },
+  { icon: "🥔", label: "Peruna" },
+  { icon: "🍓", label: "Mansikka" },
+];
+const avatars = avatarChoices.map((avatar) => avatar.icon);
 const QUESTION_SECONDS = 10;
 const FEEDBACK_DELAY_SECONDS = 5;
 const TIMER_UPDATE_MS = 250;
@@ -249,6 +259,7 @@ const state = {
   advanceTimerId: null,
   questionEndsAt: 0,
   advanceEndsAt: 0,
+  hostClockOffsetMs: 0,
 };
 
 const network = {
@@ -358,16 +369,25 @@ function setRoomStatus(message, isError = false) {
 function renderAvatarOptions() {
   avatarOptions.innerHTML = "";
 
-  avatars.forEach((avatar) => {
+  avatarChoices.forEach((avatar) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "avatar-option";
-    button.textContent = avatar;
-    button.setAttribute("aria-label", `Valitse avatar ${avatar}`);
-    button.setAttribute("aria-pressed", String(avatar === state.player.avatar));
+    button.setAttribute("aria-label", `Valitse avatar ${avatar.label}`);
+    button.setAttribute("aria-pressed", String(avatar.icon === state.player.avatar));
+
+    const icon = document.createElement("span");
+    icon.className = "avatar-icon";
+    icon.textContent = avatar.icon;
+
+    const label = document.createElement("span");
+    label.className = "avatar-label";
+    label.textContent = avatar.label;
+
+    button.append(icon, label);
 
     button.addEventListener("click", () => {
-      state.player.avatar = avatar;
+      state.player.avatar = avatar.icon;
       renderAvatarOptions();
     });
 
@@ -518,6 +538,38 @@ function normalizeRoomCode(value) {
     .replace(/[^A-Z0-9_-]/g, "");
 }
 
+function createQuestionTiming(startAt = Date.now()) {
+  return {
+    questionEndsAt: startAt + QUESTION_SECONDS * 1000,
+    advanceEndsAt: startAt + (QUESTION_SECONDS + FEEDBACK_DELAY_SECONDS) * 1000,
+  };
+}
+
+function hostTimeToLocal(hostTime) {
+  return Number(hostTime) - state.hostClockOffsetMs;
+}
+
+function updateHostClockOffset(clientSentAt, hostNow, clientReceivedAt = Date.now()) {
+  const sentAt = Number(clientSentAt);
+  const receivedAt = Number(clientReceivedAt);
+  const hostTimestamp = Number(hostNow);
+
+  if (!Number.isFinite(sentAt) || !Number.isFinite(receivedAt) || !Number.isFinite(hostTimestamp)) {
+    return;
+  }
+
+  const roundTripMs = Math.max(0, receivedAt - sentAt);
+  state.hostClockOffsetMs = hostTimestamp + roundTripMs / 2 - receivedAt;
+}
+
+function updateHostClockOffsetFromSnapshot(hostNow, clientReceivedAt = Date.now()) {
+  const hostTimestamp = Number(hostNow);
+
+  if (Number.isFinite(hostTimestamp)) {
+    state.hostClockOffsetMs = hostTimestamp - clientReceivedAt;
+  }
+}
+
 function attachHostConnection(connection) {
   connection.on("open", () => {
     sendToConnection(connection, { type: "room-state", room: serializeRoom() });
@@ -532,6 +584,7 @@ function attachGuestConnection(connection) {
 
   connection.on("open", () => {
     setRoomStatus("Liitytty huoneeseen. Odotetaan aloitusta.");
+    sendToHost({ type: "clock-ping", clientSentAt: Date.now() });
     sendToHost({ type: "join", player: getLocalPlayerSnapshot({ connected: true }) });
   });
   connection.on("data", handleGuestMessage);
@@ -548,6 +601,14 @@ function handleHostMessage(connection, message) {
     return;
   }
 
+  if (message.type === "clock-ping") {
+    sendToConnection(connection, {
+      type: "clock-pong",
+      clientSentAt: message.clientSentAt,
+      hostNow: Date.now(),
+    });
+  }
+
   if (message.type === "join") {
     const player = normalizePlayer(message.player);
     network.connectionsByPlayerId.set(player.id, connection);
@@ -560,7 +621,9 @@ function handleHostMessage(connection, message) {
     };
 
     if (state.phase === "quiz") {
-      sendToConnection(connection, { type: "start", room: serializeRoom() });
+      sendQuestionSync(connection);
+    } else if (state.phase === "results") {
+      sendToConnection(connection, { type: "room-state", room: serializeRoom() });
     } else {
       sendToConnection(connection, { type: "room-state", room: serializeRoom() });
     }
@@ -597,15 +660,20 @@ function handleGuestMessage(message) {
     return;
   }
 
+  if (message.type === "clock-pong") {
+    updateHostClockOffset(message.clientSentAt, message.hostNow);
+  }
+
   if (message.type === "room-state") {
     hydrateRoom(message.room);
-    renderLobby();
+    if (!lobbyView.hidden || state.phase === "lobby") {
+      renderLobby();
+    }
     renderLeaderboards();
   }
 
-  if (message.type === "start") {
-    hydrateRoom(message.room);
-    beginMultiplayerQuiz();
+  if (message.type === "question-sync") {
+    handleQuestionSync(message);
   }
 }
 
@@ -643,21 +711,6 @@ function getPeerErrorMessage(error) {
   return `Moninpelivirhe: ${error.type}`;
 }
 
-function beginMultiplayerQuiz() {
-  state.phase = "quiz";
-  resetQuizProgress();
-  syncLocalPlayer({
-    score: 0,
-    answered: 0,
-    done: false,
-    connected: true,
-    isHost: state.role === "host",
-  });
-  showView(quizView);
-  renderQuestion();
-  renderLeaderboards();
-}
-
 function startRoomQuiz() {
   if (state.role !== "host") {
     return;
@@ -669,8 +722,22 @@ function startRoomQuiz() {
     player.done = false;
   });
 
-  beginMultiplayerQuiz();
-  broadcast({ type: "start", room: serializeRoom() });
+  state.phase = "quiz";
+  state.currentQuestionIndex = 0;
+  state.score = 0;
+  state.answeredCount = 0;
+  state.hasAnswered = false;
+  state.isDone = false;
+  syncLocalPlayer({
+    score: 0,
+    answered: 0,
+    done: false,
+    connected: true,
+    isHost: true,
+  });
+  showView(quizView);
+  renderQuestion(createQuestionTiming());
+  broadcastQuestionSync();
   broadcastRoomState();
 }
 
@@ -716,12 +783,36 @@ function broadcastRoomState() {
   broadcast({ type: "room-state", room: serializeRoom() });
 }
 
+function sendQuestionSync(connection) {
+  sendToConnection(connection, createQuestionSyncMessage());
+}
+
+function broadcastQuestionSync() {
+  if (state.role !== "host") {
+    return;
+  }
+
+  broadcast(createQuestionSyncMessage());
+}
+
+function createQuestionSyncMessage() {
+  return {
+    type: "question-sync",
+    room: serializeRoom(),
+    questionIndex: state.currentQuestionIndex,
+    questionEndsAt: state.questionEndsAt,
+    advanceEndsAt: state.advanceEndsAt,
+    hostNow: Date.now(),
+  };
+}
+
 function serializeRoom() {
   return {
     code: state.roomCode,
     phase: state.phase,
     players: Object.values(state.players),
     questionCount: questions.length,
+    currentQuestionIndex: state.currentQuestionIndex,
   };
 }
 
@@ -745,6 +836,27 @@ function hydrateRoom(room) {
     connected: true,
     isHost: state.role === "host",
   });
+}
+
+function handleQuestionSync(message) {
+  updateHostClockOffsetFromSnapshot(message.hostNow);
+  hydrateRoom(message.room);
+
+  const questionIndex = clampNumber(message.questionIndex, 0, questions.length - 1);
+  const timing = {
+    questionEndsAt: hostTimeToLocal(message.questionEndsAt),
+    advanceEndsAt: hostTimeToLocal(message.advanceEndsAt),
+  };
+
+  if (!quizView.hidden && state.currentQuestionIndex === questionIndex) {
+    return;
+  }
+
+  state.phase = "quiz";
+  state.currentQuestionIndex = questionIndex;
+  showView(quizView);
+  renderQuestion(timing);
+  renderLeaderboards();
 }
 
 function normalizePlayer(player) {
@@ -876,10 +988,12 @@ async function copyRoomLink() {
   }
 }
 
-function renderQuestion() {
+function renderQuestion(timing = createQuestionTiming()) {
   clearQuizTimers();
   const question = questions[state.currentQuestionIndex];
   state.hasAnswered = false;
+  state.questionEndsAt = Number(timing.questionEndsAt);
+  state.advanceEndsAt = Number(timing.advanceEndsAt);
 
   playerAvatar.textContent = state.player.avatar;
   playerNameLabel.textContent = state.player.name;
@@ -911,9 +1025,12 @@ function renderQuestion() {
 }
 
 function startQuestionTimer() {
-  state.questionEndsAt = Date.now() + QUESTION_SECONDS * 1000;
+  const questionDelayMs = Math.max(0, state.questionEndsAt - Date.now());
+  const advanceDelayMs = Math.max(0, state.advanceEndsAt - Date.now());
+
   state.timerIntervalId = window.setInterval(updateQuestionTimer, TIMER_UPDATE_MS);
-  state.questionTimerId = window.setTimeout(() => resolveQuestion(null, true), QUESTION_SECONDS * 1000);
+  state.questionTimerId = window.setTimeout(() => resolveQuestion(null, true), questionDelayMs);
+  state.advanceTimerId = window.setTimeout(advanceQuiz, advanceDelayMs);
   updateQuestionTimer();
 }
 
@@ -969,7 +1086,8 @@ function resolveQuestion(selectedIndex, timedOut) {
   state.timerIntervalId = null;
 
   const question = questions[state.currentQuestionIndex];
-  const isCorrect = !timedOut && selectedIndex === question.correctIndex;
+  const isTimedOut = timedOut || Date.now() >= state.questionEndsAt;
+  const isCorrect = !isTimedOut && selectedIndex === question.correctIndex;
   state.hasAnswered = true;
   state.answeredCount = Math.max(state.answeredCount, state.currentQuestionIndex + 1);
 
@@ -977,14 +1095,14 @@ function resolveQuestion(selectedIndex, timedOut) {
     state.score += 1;
   }
 
-  updateTimerDisplay(timedOut ? 0 : Math.max(0, Math.ceil((state.questionEndsAt - Date.now()) / 1000)), QUESTION_SECONDS);
+  updateTimerDisplay(isTimedOut ? 0 : Math.max(0, Math.ceil((state.questionEndsAt - Date.now()) / 1000)), QUESTION_SECONDS);
 
   [...answerOptions.children].forEach((button, index) => {
     button.disabled = true;
 
     if (index === question.correctIndex) {
       button.classList.add("correct");
-    } else if (!timedOut && index === selectedIndex) {
+    } else if (!isTimedOut && index === selectedIndex) {
       button.classList.add("incorrect");
     }
   });
@@ -992,7 +1110,7 @@ function resolveQuestion(selectedIndex, timedOut) {
   scoreLabel.textContent = `${state.score} pistettä`;
   feedbackPanel.hidden = false;
   feedbackPanel.classList.add(isCorrect ? "right" : "wrong");
-  feedbackTitle.textContent = getFeedbackTitle(isCorrect, timedOut);
+  feedbackTitle.textContent = getFeedbackTitle(isCorrect, isTimedOut);
   feedbackExplanation.textContent = question.explanation;
   scheduleAutoAdvance();
 
@@ -1008,10 +1126,8 @@ function getFeedbackTitle(isCorrect, timedOut) {
 }
 
 function scheduleAutoAdvance() {
-  state.advanceEndsAt = Date.now() + FEEDBACK_DELAY_SECONDS * 1000;
   autoAdvanceStatus.hidden = false;
   state.timerIntervalId = window.setInterval(updateAutoAdvanceStatus, TIMER_UPDATE_MS);
-  state.advanceTimerId = window.setTimeout(advanceQuiz, FEEDBACK_DELAY_SECONDS * 1000);
   updateAutoAdvanceStatus();
 }
 
@@ -1028,6 +1144,12 @@ function updateAutoAdvanceStatus() {
 }
 
 function advanceQuiz() {
+  const nextStartAt = state.advanceEndsAt || Date.now();
+
+  if (!state.hasAnswered) {
+    resolveQuestion(null, true);
+  }
+
   if (state.timerIntervalId) {
     window.clearInterval(state.timerIntervalId);
   }
@@ -1041,7 +1163,13 @@ function advanceQuiz() {
 
   if (state.currentQuestionIndex < questions.length - 1) {
     state.currentQuestionIndex += 1;
-    renderQuestion();
+    const timing = createQuestionTiming(nextStartAt);
+    renderQuestion(timing);
+
+    if (state.role === "host") {
+      broadcastQuestionSync();
+    }
+
     return;
   }
 
@@ -1098,7 +1226,7 @@ function getResultFeedback(score) {
 }
 
 function renderResults() {
-  state.phase = state.role === "solo" ? "results" : state.phase;
+  state.phase = "results";
   syncAndShareScore(true);
 
   resultAvatar.textContent = state.player.avatar;
